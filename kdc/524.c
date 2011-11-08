@@ -270,6 +270,7 @@ encode_524_response(krb5_context context,
 		    "no suitable DES key for server (%s)", spn);
 	    return ret;
 	}
+	skey->key.keytype = ETYPE_DES_PCBC_NONE;
 	ret = encrypt_v4_ticket(context, config, buf + sizeof(buf) - len, len,
 				&skey->key, ticket);
 	if(ret){

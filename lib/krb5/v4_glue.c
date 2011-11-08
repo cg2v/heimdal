@@ -329,14 +329,23 @@ decrypt_etext(krb5_context context, const krb5_keyblock *key,
 	      const krb5_data *cdata, krb5_data *data)
 {
     krb5_error_code ret;
+    krb5_keyblock nk;
     krb5_crypto crypto;
 
-    ret = krb5_crypto_init(context, key, ETYPE_DES_PCBC_NONE, &crypto);
+    ret=krb5_keyblock_init(context, ETYPE_DES_PCBC_NONE,
+			   key->keyvalue.data, 8, &nk);
     if (ret)
 	return ret;
 
+    ret = krb5_crypto_init(context, &nk, ETYPE_DES_PCBC_NONE, &crypto);
+    if (ret) {
+	krb5_free_keyblock_contents(context, &nk);
+	return ret;
+    }
+
     ret = krb5_decrypt(context, crypto, 0, cdata->data, cdata->length, data);
     krb5_crypto_destroy(context, crypto);
+    krb5_free_keyblock_contents(context, &nk);
 
     return ret;
 }
@@ -358,6 +367,7 @@ storage_to_etext(krb5_context context,
     krb5_crypto crypto;
     krb5_ssize_t size;
     krb5_data data;
+    krb5_keyblock nk;
 
     /* multiple of eight bytes, don't round up */
 
@@ -374,9 +384,17 @@ storage_to_etext(krb5_context context,
     if (ret)
 	return ret;
 
-    ret = krb5_crypto_init(context, key, ETYPE_DES_PCBC_NONE, &crypto);
+    ret = krb5_keyblock_init(context, ETYPE_DES_PCBC_NONE,
+			   key->keyvalue.data, 8, &nk);
     if (ret) {
 	krb5_data_free(&data);
+	return ret;
+    }
+
+    ret = krb5_crypto_init(context, &nk, ETYPE_DES_PCBC_NONE, &crypto);
+    if (ret) {
+    	krb5_data_free(&data);
+	krb5_free_keyblock_contents(context, &nk);
 	return ret;
     }
 
@@ -384,6 +402,7 @@ storage_to_etext(krb5_context context,
 
     krb5_data_free(&data);
     krb5_crypto_destroy(context, crypto);
+    krb5_free_keyblock_contents(context, &nk);
 
     return ret;
 }
