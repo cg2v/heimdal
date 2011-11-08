@@ -882,7 +882,7 @@ _krb5_krb_rd_req(krb5_context context,
 	goto error;
     }
 
-    if (from_addr && ad->address && from_addr != ad->address) {
+    if (from_addr && ad->address && ntohl(from_addr) != ad->address) {
 	ret = KRB4ET_RD_AP_BADD;
 	krb5_set_error_message(context, ret,
 			       N_("v4 bad address in ticket", ""));
