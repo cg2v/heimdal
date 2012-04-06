@@ -95,6 +95,8 @@ typedef struct krb5_kdc_configuration {
     const char *kx509_template;
     const char *kx509_ca;
 
+    const char *alt_kvno_keytab;
+
 } krb5_kdc_configuration;
 
 struct krb5_kdc_service {

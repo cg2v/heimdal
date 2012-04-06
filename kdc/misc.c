@@ -112,6 +112,111 @@ _kdc_free_ent(krb5_context context, hdb_entry_ex *ent)
     free (ent);
 }
 
+
+krb5_error_code 
+_kdc_fetch_alt_tgs_keys(krb5_context context, krb5_kdc_configuration *config,
+		       krb5_principal principal,
+		       int kvno, HDB *db, hdb_entry_ex *h)
+{
+    int n_keys,n,oldn_keys;
+    Key *keys,*oldkeys;
+    krb5_error_code ret;
+    krb5_keytab kt;
+    krb5_kt_cursor seq;
+    krb5_keytab_entry entry;
+    
+    if (!config->alt_kvno_keytab)
+	return KRB5KRB_AP_ERR_BADKEYVER;
+    ret=krb5_kt_resolve(context, config->alt_kvno_keytab,&kt);
+    if (ret) 
+	return ret;
+    ret=krb5_kt_start_seq_get(context,kt,&seq);
+    if (ret){
+	krb5_kt_close(context, kt);
+	return ret;
+    }
+    n_keys=0;
+    while (!(ret=krb5_kt_next_entry(context, kt, &entry, &seq))) {
+	char string[256];
+	krb5_unparse_name_fixed(context, entry.principal, string, 255);
+	if (krb5_principal_compare(context,principal, entry.principal) &&
+	    entry.vno == kvno)
+	    n_keys++;
+	krb5_kt_free_entry(context, &entry);
+    }
+    ret=krb5_kt_end_seq_get(context,kt,&seq);
+    if (ret){
+	krb5_kt_close(context, kt);
+	return ret;
+    }
+    
+    if (!n_keys) {
+	krb5_kt_close(context, kt);
+	return KRB5KRB_AP_ERR_BADKEYVER;
+    }
+    
+    keys=malloc(n_keys*sizeof(Key));
+    if (!keys) {
+	krb5_kt_close(context, kt);
+	return ENOMEM;
+    }
+    ret=krb5_kt_start_seq_get(context,kt,&seq);
+    if (ret){
+	free(keys);
+	krb5_kt_close(context, kt);
+	return ret;
+    }
+    n=0;
+    while (!(ret=krb5_kt_next_entry(context, kt, &entry, &seq))) {
+	if (krb5_principal_compare(context,principal, entry.principal) &&
+	    entry.vno == kvno) {
+            if (entry.keyblock.keytype==ETYPE_NULL) {
+		int keylen=entry.keyblock.keyvalue.length-2*sizeof(int);
+		char *keyptr=entry.keyblock.keyvalue.data;
+		keys[n].mkvno=malloc(sizeof(int));
+		if (!keys[n].mkvno) {
+		    krb5_kt_free_entry(context, &entry);
+		    continue;
+		}
+		memcpy(&entry.keyblock.keytype, &keyptr[keylen], sizeof(int));
+		entry.keyblock.keytype=ntohl(entry.keyblock.keytype);
+		memcpy(keys[n].mkvno, &keyptr[keylen+sizeof(int)],sizeof(int));
+		*keys[n].mkvno=ntohl(*keys[n].mkvno);
+		entry.keyblock.keyvalue.length=keylen;
+            } else {
+		keys[n].mkvno = NULL;
+            }
+            krb5_copy_keyblock_contents(context, 
+                                        &entry.keyblock, 
+                                        &keys[n].key);
+            keys[n].salt=NULL;
+            n++;
+	}
+	krb5_kt_free_entry(context, &entry);
+    }
+    ret=krb5_kt_end_seq_get(context,kt,&seq);
+    if (ret){
+	free(keys);
+	krb5_kt_close(context, kt);
+	return ret;
+    }
+    krb5_kt_close(context, kt);
+    oldn_keys=h->entry.keys.len;
+    oldkeys=h->entry.keys.val;
+    h->entry.keys.len=n_keys;
+    h->entry.keys.val=keys;
+    for (n=0;n<oldn_keys;n++)
+	free_Key(&oldkeys[n]);
+    ret=0;
+    if (db) {
+	ret=hdb_unseal_keys(context, db, &h->entry);
+    }
+    if (ret == 0)            
+        h->entry.kvno=kvno;
+    return ret;
+}
+
+
 /*
  * Use the order list of preferred encryption types and sort the
  * available keys and return the most preferred key.

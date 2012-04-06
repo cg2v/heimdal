@@ -311,7 +311,7 @@ check_PAC(krb5_context context,
 	}
 	for (j = 0; j < child.len; j++) {
 
-	    if (child.val[j].ad_type == KRB5_AUTHDATA_WIN2K_PAC) {
+    if (child.val[j].ad_type == KRB5_AUTHDATA_WIN2K_PAC) {
 		int signed_pac = 0;
 		krb5_pac pac;
 
@@ -1109,6 +1109,7 @@ tgs_parse_request(krb5_context context,
     Key *tkey;
     krb5_keyblock *subkey = NULL;
     unsigned usage;
+    HDB *db = NULL;
 
     *auth_data = NULL;
     *csec  = NULL;
@@ -1136,7 +1137,7 @@ tgs_parse_request(krb5_context context,
 				       ap_req.ticket.sname,
 				       ap_req.ticket.realm);
 
-    ret = _kdc_db_fetch(context, config, princ, HDB_F_GET_KRBTGT, NULL, krbtgt);
+    ret = _kdc_db_fetch(context, config, princ, HDB_F_GET_KRBTGT, &db, krbtgt);
 
     if(ret) {
 	const char *msg = krb5_get_error_message(context, ret);
@@ -1156,33 +1157,44 @@ tgs_parse_request(krb5_context context,
 
     if(ap_req.ticket.enc_part.kvno &&
        *ap_req.ticket.enc_part.kvno != (*krbtgt)->entry.kvno){
-	char *p;
-
-	ret = krb5_unparse_name (context, princ, &p);
-	krb5_free_principal(context, princ);
-	if (ret != 0)
-	    p = "<unparse_name failed>";
-	kdc_log(context, config, 0,
-		"Ticket kvno = %d, DB kvno = %d (%s)",
-		*ap_req.ticket.enc_part.kvno,
-		(*krbtgt)->entry.kvno,
-		p);
-	if (ret == 0)
-	    free (p);
-	ret = KRB5KRB_AP_ERR_BADKEYVER;
-	goto out;
+	
+	ret=_kdc_fetch_alt_tgs_keys(context, config, princ,
+				    *ap_req.ticket.enc_part.kvno, db, *krbtgt);
+	if (ret) {
+	    char *p;
+	    
+	    krb5_error_code unret = krb5_unparse_name (context, princ, &p);
+	    krb5_free_principal(context, princ);
+	    if (unret != 0)
+		p = "<unparse_name failed>";
+	    kdc_log(context, config, 0,
+		    "Ticket kvno = %d, DB kvno = %d (%s)",
+		    *ap_req.ticket.enc_part.kvno,
+		    (*krbtgt)->entry.kvno,
+		    p);
+	    if (unret == 0)
+		free (p);
+	    if (ret != KRB5KRB_AP_ERR_BADKEYVER) {
+		const char *msg = krb5_get_error_message(context, ret);
+		kdc_log(context, config, 0, "Failed to fetch old keys: %s", 
+			msg);
+		krb5_free_error_message(context, msg);
+	    }
+	    ret = KRB5KRB_AP_ERR_BADKEYVER;
+	    goto out;
+	}
     }
-
+	
     *krbtgt_etype = ap_req.ticket.enc_part.etype;
-
+    
     ret = hdb_enctype2key(context, &(*krbtgt)->entry,
 			  ap_req.ticket.enc_part.etype, &tkey);
     if(ret){
 	char *str = NULL, *p = NULL;
-
+	
 	krb5_enctype_to_string(context, ap_req.ticket.enc_part.etype, &str);
 	krb5_unparse_name(context, princ, &p);
- 	kdc_log(context, config, 0,
+	kdc_log(context, config, 0,
 		"No server key with enctype %s found for %s",
 		str ? str : "<unknown enctype>",
 		p ? p : "<unparse_name failed>");
