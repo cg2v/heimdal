@@ -94,11 +94,9 @@ configure(krb5_context context)
 	char *config_file;
         char **files;
 
-        if (config_file == NULL) {
-            asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
-            if (config_file == NULL)
-                errx(1, "out of memory");
-        }
+	asprintf(&config_file, "%s/kdc.conf", hdb_db_dir(context));
+	if (config_file == NULL)
+	    errx(1, "out of memory");
 
         ret = krb5_prepend_config_files_default(config_file, &files);
         if (ret)
@@ -204,20 +202,18 @@ static krb5_error_code process_one_entry(krb5_context context, HDB *db,
     hdb_entry *hentry = &hx->entry;
     int i;
     struct extract_context *e=data;
-    while(ret == 0){
-	if (krb5_principal_match(context, hentry->principal,
-				 e->wild)) {
-	    for (i=0;i<e->nprincs;i++) {
-		if (krb5_principal_compare(context, e->princs[i],
-					   hentry->principal)) {
-		    if (e->maxcachedkvno[i] >= hentry->kvno)
-			break;
-		    do_add(context, e->kt, hentry);
-		}
-	    }
-	    if (i == e->nprincs)
+    if (krb5_principal_match(context, hentry->principal,
+			     e->wild)) {
+	for (i=0;i<e->nprincs;i++) {
+	    if (krb5_principal_compare(context, e->princs[i],
+				       hentry->principal)) {
+		if (e->maxcachedkvno[i] >= hentry->kvno)
+		    break;
 		do_add(context, e->kt, hentry);
+	    }
 	}
+	if (i == e->nprincs)
+	    do_add(context, e->kt, hentry);
     }
     return 0;
 }
@@ -239,7 +235,11 @@ main(int argc, char **argv)
     
     config=configure(context);
     
+    if (config->alt_kvno_keytab == NULL)
+	krb5_errx(context, 0, "alt_kvno_keytab not set");
+    kdc_log(context, config, 0, "    keytab: %s", config->alt_kvno_keytab);
     memset(&ec, 0, sizeof(struct extract_context));
+    
     ret=krb5_kt_resolve(context, config->alt_kvno_keytab, &ec.kt);
     if (ret) 
 	krb5_err(context, 1, ret, "opening keytab");
