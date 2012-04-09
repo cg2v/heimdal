@@ -8,7 +8,7 @@ lib_LTLIBRARIES = libkdc.la
 
 bin_PROGRAMS = string2key
 
-sbin_PROGRAMS = kstash
+sbin_PROGRAMS = kstash tgtextract
 
 libexec_PROGRAMS = hprop hpropd kdc digest-service
 
@@ -20,6 +20,7 @@ hprop_SOURCES = hprop.c mit_dump.c v4_dump.c hprop.h kadb.h
 hpropd_SOURCES = hpropd.c hprop.h
 
 kstash_SOURCES = kstash.c headers.h
+tgtextract_SOURCES = tgtextract.c headers.h
 
 string2key_SOURCES = string2key.c headers.h
 
@@ -109,6 +110,7 @@ LDADD = $(top_builddir)/lib/hdb/libhdb.la \
 	$(LIB_roken) \
 	$(DBLIB)
 
+tgtextract_LDADD = libkdc.la $(LDADD)
 kdc_LDADD = libkdc.la $(LDADD) $(LIB_pidfile) $(CAPNG_LIBS)
 
 if FRAMEWORK_SECURITY

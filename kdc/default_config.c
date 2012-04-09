@@ -65,6 +65,7 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
     c->db = NULL;
     c->num_db = 0;
     c->logf = NULL;
+    c->alt_kvno_keytab=NULL;
 
     c->require_preauth =
 	krb5_config_get_bool_default(context, NULL,
@@ -258,6 +259,13 @@ krb5_kdc_get_config(krb5_context context, krb5_kdc_configuration **config)
 				    0,
 				    "kdc", "pkinit_dh_min_bits", NULL);
 
+    c->alt_kvno_keytab =
+	krb5_config_get_string(context, NULL,
+			       "kdc", "alt_kvno_keytab", NULL);
+    if (c->alt_kvno_keytab == NULL)
+        c->alt_kvno_keytab =
+	    krb5_config_get_string(context, NULL,
+			           "kdc", "keytab", NULL);
 
     *config = c;
 

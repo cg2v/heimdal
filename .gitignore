@@ -138,6 +138,7 @@ asn1_*.[cx]
 /kdc/kdc-replay
 /kdc/kstash
 /kdc/string2key
+/kdc/tgtextract
 /kpasswd/kpasswd
 /kpasswd/kpasswd-generator
 /kpasswd/kpasswdd
