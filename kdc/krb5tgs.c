@@ -1404,6 +1404,62 @@ eout:
     return ENOMEM;
 }
 
+static void
+log_tgs_enctypes(krb5_context context,
+	   krb5_kdc_configuration *config,
+	   krb5_enctype etype,
+	   const KDC_REQ_BODY *b)
+{
+    krb5_error_code ret;
+    struct rk_strpool *p;
+    char *str;
+    int i;
+
+    p = rk_strpoolprintf(NULL, "%s", "Client supported enctypes: ");
+
+    for (i = 0; i < b->etype.len; i++) {
+	ret = krb5_enctype_to_string(context, b->etype.val[i], &str);
+	if (ret == 0) {
+	    p = rk_strpoolprintf(p, "%s", str);
+	    free(str);
+	} else
+	    p = rk_strpoolprintf(p, "%d", b->etype.val[i]);
+	if (p && i + 1 < b->etype.len)
+	    p = rk_strpoolprintf(p, ", ");
+	if (p == NULL) {
+	    kdc_log(context, config, 0, "out of memory");
+	    return;
+	}
+    }
+    if (p == NULL)
+	p = rk_strpoolprintf(p, "no encryption types");
+
+    if (etype != ETYPE_NULL)
+    {
+	char *et;
+
+	ret = krb5_enctype_to_string(context, etype, &et);
+	if(ret == 0) {
+	  p = rk_strpoolprintf(p, ", using %s", et);
+	  free(et);
+	} else
+	  p = rk_strpoolprintf(p, ", using enctype %d",
+				 etype);
+    }
+
+    str = rk_strpoolcollect(p);
+    kdc_log(context, config, 0, "%s", str);
+    free(str);
+
+    {
+	char fixedstr[128];
+	unparse_flags(KDCOptions2int(b->kdc_options), asn1_KDCOptions_units(),
+		      fixedstr, sizeof(fixedstr));
+	if(*fixedstr)
+	    kdc_log(context, config, 0, "Requested flags: %s", fixedstr);
+    }
+}
+
 static krb5_error_code
 tgs_build_reply(krb5_context context,
 		krb5_kdc_configuration *config,
@@ -1656,6 +1712,7 @@ server_lookup:
 	ret = krb5_generate_random_keyblock(context, etype, &sessionkey);
 	if (ret)
 	    goto out;
+	log_tgs_enctypes(context, config, etype, b);
     }
 
     /*

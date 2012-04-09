@@ -635,6 +635,7 @@ log_as_req(krb5_context context,
     if (p == NULL)
 	p = rk_strpoolprintf(p, "no encryption types");
 
+    if (cetype != ETYPE_NULL || setype != ETYPE_NULL)
     {
 	char *cet;
 	char *set;
@@ -1391,6 +1392,7 @@ _kdc_as_rep(krb5_context context,
 	kdc_log(context, config, 0,
 		"No preauth found, returning PREAUTH-REQUIRED -- %s",
 		client_name);
+	log_as_req(context, config, ETYPE_NULL, ETYPE_NULL, b);
 	goto out;
     }
 
