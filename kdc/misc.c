@@ -240,10 +240,11 @@ _kdc_get_preferred_key(krb5_context context,
 	if (krb5_enctype_valid(context, p[i]) != 0)
 	    continue;
 	ret = hdb_enctype2key(context, &h->entry, p[i], key);
-	if (ret == 0) {
-	    *enctype = p[i];
-	    return 0;
-	}
+        if (ret != 0)
+            continue;
+        if (enctype != NULL)
+            *enctype = p[i];
+        return 0;
     }
 
     krb5_set_error_message(context, EINVAL,

@@ -124,7 +124,7 @@ is_default_salt_p(const krb5_salt *default_salt, const Key *key)
 
 krb5_error_code
 _kdc_find_etype(krb5_context context, const hdb_entry_ex *princ,
-		krb5_enctype *etypes, unsigned len,
+		krb5_enctype *etypes, unsigned len, krb5_enctype *ret_enctype,
 		Key **ret_key)
 {
     int i;
@@ -145,7 +145,10 @@ _kdc_find_etype(krb5_context context, const hdb_entry_ex *princ,
 		ret = KRB5KDC_ERR_NULL_KEY;
 		continue;
 	    }
-	    *ret_key   = key;
+            if (ret_key != NULL)
+                *ret_key = key;
+            if (ret_enctype != NULL)
+                *ret_enctype = etypes[i];
 	    ret = 0;
 	    if (is_default_salt_p(&def_salt, key)) {
 		krb5_free_salt (context, def_salt);
@@ -1349,7 +1352,7 @@ _kdc_as_rep(krb5_context context,
 	 * If there is a client key, send ETYPE_INFO{,2}
 	 */
 	ret = _kdc_find_etype(context, client, b->etype.val, b->etype.len,
-			      &ckey);
+			      NULL, &ckey);
 	if (ret == 0) {
 
 	    /*

@@ -939,7 +939,7 @@ tgs_make_reply(krb5_context context,
        etype list, even if we don't want a session key with
        DES3? */
     ret = _kdc_encode_reply(context, config,
-			    &rep, &et, &ek, et.key.keytype,
+			    &rep, &et, &ek, 0,
 			    kvno,
 			    serverkey, 0, replykey, rk_is_subkey,
 			    e_text, reply);
@@ -1710,14 +1710,20 @@ server_lookup:
 	    Key *skey;
 	
 	    ret = _kdc_find_etype(context, server,
-				  b->etype.val, b->etype.len, &skey);
+				  b->etype.val, b->etype.len, &etype, NULL);
 	    if(ret) {
 		kdc_log(context, config, 0,
 			"Server (%s) has no support for etypes", spn);
 		goto out;
 	    }
+            ret = _kdc_get_preferred_key(context, config, server, spn,
+                                         NULL, &skey);
+            if(ret) {
+                kdc_log(context, config, 0,
+                        "Server (%s) has no supported etypes", spn);
+                goto out;
+            }
 	    ekey = &skey->key;
-	    etype = skey->key.keytype;
 	    kvno = server->entry.kvno;
 	}
 	
