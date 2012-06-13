@@ -115,6 +115,7 @@ _kdc_add_KRB5SignedPath(krb5_context context,
     krb5_crypto crypto = NULL;
     size_t size;
 
+    return 0;
     if (server && principals) {
 	ret = add_Principals(principals, server);
 	if (ret)
