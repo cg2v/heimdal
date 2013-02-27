@@ -653,12 +653,18 @@ fix_transited_encoding(krb5_context context,
 	ret = krb5_check_transited(context, client_realm,
 				   server_realm,
 				   realms, num_realms, NULL);
-	if(ret) {
+	switch(ret) {
+	case 0:
+	    et->flags.transited_policy_checked = 1;
+	    break;
+	case KRB5KRB_AP_ERR_ILL_CR_TKT:
+	    break;
+	default:
 	    krb5_warn(context, ret, "cross-realm %s -> %s",
 		      client_realm, server_realm);
 	    goto free_realms;
 	}
-	et->flags.transited_policy_checked = 1;
+	
     }
     et->transited.tr_type = DOMAIN_X500_COMPRESS;
     ret = krb5_domain_x500_encode(realms, num_realms, &et->transited.contents);
