@@ -156,6 +156,16 @@ _kdc_find_etype(krb5_context context, const hdb_entry_ex *princ,
 	    }
 	}
     }
+    if (ret && ret_key == NULL) {
+	for(i = 0; ret != 0 && i < len ; i++) {
+	   if (etypes[i] == ETYPE_DES_CBC_CRC
+		|| etypes[i] == ETYPE_DES_CBC_MD5) {
+            if (ret_enctype != NULL)
+                *ret_enctype = etypes[i];
+	    ret = 0;
+           }
+        }
+    }
     krb5_free_salt (context, def_salt);
     return ret;
 }
