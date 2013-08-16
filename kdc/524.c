@@ -185,41 +185,6 @@ set_address (krb5_context context,
     return 0;
 }
 
-
-static krb5_error_code
-encrypt_v4_ticket(krb5_context context,
-		  krb5_kdc_configuration *config,
-		  void *buf,
-		  size_t len,
-		  krb5_keyblock *skey,
-		  EncryptedData *reply)
-{
-    krb5_crypto crypto;
-    krb5_error_code ret;
-    ret = krb5_crypto_init(context, skey, ETYPE_DES_PCBC_NONE, &crypto);
-    if (ret) {
-	free(buf);
-	kdc_log(context, config, 0, "krb5_crypto_init failed: %s",
-		krb5_get_err_text(context, ret));
-	return ret;
-    }
-
-    ret = krb5_encrypt_EncryptedData(context,
-				     crypto,
-				     KRB5_KU_TICKET,
-				     buf,
-				     len,
-				     0,
-				     reply);
-    krb5_crypto_destroy(context, crypto);
-    if(ret) {
-	kdc_log(context, config, 0, "Failed to encrypt data: %s",
-		krb5_get_err_text(context, ret));
-	return ret;
-    }
-    return 0;
-}
-
 static krb5_error_code
 encode_524_response(krb5_context context,
 		    krb5_kdc_configuration *config,
@@ -247,38 +212,13 @@ encode_524_response(krb5_context context,
 	ticket->kvno = NULL;
 	*kvno = 213; /* 2b's use this magic kvno */
     } else {
-	unsigned char buf[MAX_KTXT_LEN + 4 * 4];
-	Key *skey;
-	
 	if (!config->enable_v4_cross_realm && strcmp (et.crealm, t->realm) != 0) {
 	    kdc_log(context, config, 0, "524 cross-realm %s -> %s disabled", et.crealm,
 		    t->realm);
 	    return KRB5KDC_ERR_POLICY;
 	}
-
-	ret = _kdc_encode_v4_ticket(context, config,
-				    buf + sizeof(buf) - 1, sizeof(buf),
-				    &et, &t->sname, &len);
-	if(ret){
-	    kdc_log(context, config, 0,
-		    "Failed to encode v4 ticket (%s)", spn);
-	    return ret;
-	}
-	ret = _kdc_get_des_key(context, server, TRUE, FALSE, &skey);
-	if(ret){
-	    kdc_log(context, config, 0,
-		    "no suitable DES key for server (%s)", spn);
-	    return ret;
-	}
-	skey->key.keytype = ETYPE_DES_PCBC_NONE;
-	ret = encrypt_v4_ticket(context, config, buf + sizeof(buf) - len, len,
-				&skey->key, ticket);
-	if(ret){
-	    kdc_log(context, config, 0,
-		    "Failed to encrypt v4 ticket (%s)", spn);
-	    return ret;
-	}
-	*kvno = server->entry.kvno;
+	kdc_log(context, config, 0, "524 disabled");
+	return KRB5KDC_ERR_POLICY;
     }
 
     return 0;
