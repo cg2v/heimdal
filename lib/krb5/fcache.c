@@ -494,11 +494,6 @@ fcc_store_cred(krb5_context context,
 	sp = krb5_storage_emem();
 	krb5_storage_set_eof_code(sp, KRB5_CC_END);
 	storage_set_flags(context, sp, FCACHE(id)->version);
-	if (!krb5_config_get_bool_default(context, NULL, TRUE,
-					  "libdefaults",
-					  "fcc-mit-ticketflags",
-					  NULL))
-	    krb5_storage_set_flags(sp, KRB5_STORAGE_CREDS_FLAGS_WRONG_BITORDER);
 	ret = krb5_store_creds(sp, creds);
 	if (ret == 0)
 	    ret = write_storage(context, sp, fd);
