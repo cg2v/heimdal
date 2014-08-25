@@ -172,6 +172,7 @@ PADATA-TYPE ::= INTEGER {
 	KRB5-PADATA-EPAK-AS-REP(146),
 	KRB5-PADATA-PKINIT-KX(147),		-- krb-wg-anon
 	KRB5-PADATA-PKU2U-NAME(148),		-- zhu-pku2u
+	KRB5-PADATA-REQ-ENC-PA-REP(149),	-- rfc6806
 	KRB5-PADATA-SUPPORTED-ETYPES(165)	-- MS-KILE
 }
 
@@ -319,6 +320,7 @@ TicketFlags ::= BIT STRING {
 	transited-policy-checked(12),
 	ok-as-delegate(13),
 	old-anonymous(14),
+	enc-pa-rep(15),
 	anonymous(16)
 }
 

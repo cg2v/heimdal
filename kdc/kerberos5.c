@@ -240,6 +240,9 @@ log_patypes(krb5_context context,
 	case KRB5_PADATA_ENC_TIMESTAMP:
 	    p = rk_strpoolprintf(p, "encrypted-timestamp");
 	    break;
+	case KRB5_PADATA_REQ_ENC_PA_REP:
+	    p = rk_strpoolprintf(p, "req-enc-pa-rep");
+	    break;
 	default:
 	    p = rk_strpoolprintf(p, "%d", padata->val[i].padata_type);
 	    break;
@@ -893,6 +896,53 @@ _kdc_is_anonymous(krb5_context context, krb5_principal principal)
 	strcmp(principal->name.name_string.val[1], KRB5_ANON_NAME) != 0)
 	return 0;
     return 1;
+}
+
+static krb5_error_code
+add_enc_pa_rep(krb5_context context,
+       krb5_kdc_configuration *config, const krb5_data *request,
+       EncryptionKey *reply_key, EncKDCRepPart *ek)
+{
+    krb5_error_code ret;
+    krb5_crypto crypto;
+    Checksum checksum;
+    krb5_data cdata;
+    size_t len;
+
+    ret = krb5_crypto_init(context, reply_key, 0, &crypto);
+    if (ret)
+	return ret;
+
+    ret = krb5_create_checksum(context, crypto,
+			       KRB5_KU_AS_REQ, 0,
+			       request->data, request->length,
+			       &checksum);
+    krb5_crypto_destroy(context, crypto);
+    if (ret)
+	return ret;
+
+    ASN1_MALLOC_ENCODE(Checksum, cdata.data, cdata.length,
+		       &checksum, &len, ret);
+    free_Checksum(&checksum);
+    if (ret)
+	return ret;
+    if(cdata.length != len) {
+	free(cdata.data);
+	kdc_log(context, config, 0, "Internal error in ASN.1 encoder");
+	return KRB5KRB_ERR_GENERIC;
+    }
+
+    if (ek->encrypted_pa_data == NULL) {
+	ALLOC(ek->encrypted_pa_data);
+	if (ek->encrypted_pa_data == NULL) {
+	    free(cdata.data);
+	    return ENOMEM;
+	}
+    }
+    ret = krb5_padata_add(context, ek->encrypted_pa_data,
+			  KRB5_PADATA_REQ_ENC_PA_REP, cdata.data, cdata.length);
+    if (ret)
+	free(cdata.data);
 }
 
 /*
@@ -1790,6 +1840,26 @@ skip_enc_ts:
 	    if (ret)
 		goto out;
 	}
+    }
+
+    /* advertise enc-pa-rep */
+    et.flags.enc_pa_rep = ek.flags.enc_pa_rep = 1;
+
+    /*
+     * Add REQ_ENC_PA_REP if client supports it
+     */
+
+    i = 0;
+    pa = _kdc_find_padata(req, &i, KRB5_PADATA_REQ_ENC_PA_REP);
+    if (pa) {
+
+	 ret = add_enc_pa_rep(context, config, req_buffer, reply_key, &ek);
+	 if (ret) {
+	     const char *msg = krb5_get_error_message(context, ret);
+	     kdc_log(context, config, 0, "add_enc_pa_rep failed: %s: %d", msg, ret);
+	     krb5_free_error_message(context, msg);
+	     goto out;
+	 }
     }
 
     _kdc_log_timestamp(context, config, "AS-REQ", et.authtime, et.starttime,
