@@ -570,7 +570,8 @@ _kdc_pk_rd_padata(krb5_context context,
 
 	type = "PK-INIT-Win2k";
 
-	if (req->req_body.kdc_options.request_anonymous) {
+	if (req->req_body.kdc_options.request_anonymous ||
+	    req->req_body.kdc_options.constrained_delegation /* old anon */) {
 	    ret = KRB5_KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED;
 	    krb5_set_error_message(context, ret, 
 				   "Anon not supported in RSA mode");
@@ -701,14 +702,14 @@ _kdc_pk_rd_padata(krb5_context context,
     if (ret != 0) {
 	ret = KRB5KRB_ERR_GENERIC;
 	krb5_set_error_message(context, ret,
-			       "PK-AS-REQ-Win2k invalid content type oid");
+			       "PK-AS-REQ invalid content type oid");
 	goto out;
     }
 	
     if (!have_data) {
 	ret = KRB5KRB_ERR_GENERIC;
 	krb5_set_error_message(context, ret,
-			      "PK-AS-REQ-Win2k no signed auth pack");
+			      "PK-AS-REQ no signed auth pack");
 	goto out;
     }
 
@@ -716,7 +717,8 @@ _kdc_pk_rd_padata(krb5_context context,
 	hx509_certs signer_certs;
 	int flags = HX509_CMS_VS_ALLOW_DATA_OID_MISMATCH; /* BTMM */
 
-	if (req->req_body.kdc_options.request_anonymous)
+	if (req->req_body.kdc_options.request_anonymous ||
+	    req->req_body.kdc_options.constrained_delegation /* old anon */)
 	    flags |= HX509_CMS_VS_ALLOW_ZERO_SIGNER;
 
 	ret = hx509_cms_verify_signed(context->hx509ctx,
@@ -801,7 +803,8 @@ _kdc_pk_rd_padata(krb5_context context,
 	    goto out;
 	}
 
-	if (req->req_body.kdc_options.request_anonymous &&
+	if ((req->req_body.kdc_options.request_anonymous ||
+	     req->req_body.kdc_options.constrained_delegation) &&
 	    ap.clientPublicValue == NULL) {
 	    free_AuthPack(&ap);
 	    ret = KRB5_KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED;
@@ -1367,16 +1370,85 @@ _kdc_pk_mk_pa_reply(krb5_context context,
 	    if (rep.u.encKeyPack.length != size)
 		krb5_abortx(context, "Internal ASN.1 encoder error");
 
-	    /* XXX KRB-FX-CF2 */
-	    ret = krb5_generate_random_keyblock(context, sessionetype, 
-						sessionkey);
-	    if (ret) {
-		free_PA_PK_AS_REP(&rep);
-		goto out;
+	    {
+		krb5_keyblock kdc_contribution_key;
+		krb5_crypto reply_crypto;
+		krb5_crypto kdccont_crypto;
+		krb5_data p1 = { strlen("PKINIT"), "PKINIT"};
+		krb5_data p2 = { strlen("KEYEXCHANGE"), "KEYEXCHANGE"};
+		void *kckdata;
+		size_t kcklen;
+		EncryptedData kx;
+		void *kxdata;
+		size_t kxlen;
+
+		ret = krb5_generate_random_keyblock(context, sessionetype, 
+						&kdc_contribution_key);
+		if (ret) {
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		ret = krb5_crypto_init(context, &cp->reply_key, enctype, &reply_crypto);
+		if (ret) {
+		    krb5_free_keyblock_contents(context, &kdc_contribution_key);
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		ret = krb5_crypto_init(context, &kdc_contribution_key, sessionetype, &kdccont_crypto);
+		if (ret) {
+		    krb5_crypto_destroy(context, reply_crypto);
+		    krb5_free_keyblock_contents(context, &kdc_contribution_key);
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		/* KRB-FX-CF2 */
+		ret = krb5_crypto_fx_cf2(context, kdccont_crypto, reply_crypto,
+				     &p1, &p2, sessionetype, sessionkey);
+		krb5_crypto_destroy(context, kdccont_crypto);
+		if (ret) {
+		    krb5_crypto_destroy(context, reply_crypto);
+		    krb5_free_keyblock_contents(context, &kdc_contribution_key);
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		ASN1_MALLOC_ENCODE(EncryptionKey, kckdata, kcklen,
+			      &kdc_contribution_key, &size, ret);
+		krb5_free_keyblock_contents(context, &kdc_contribution_key);
+		if (ret) {
+		    krb5_set_error_message(context, ret, "encoding of PKINIT-KX Key failed %d", ret);
+		    krb5_crypto_destroy(context, reply_crypto);
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		if (kcklen != size)
+		    krb5_abortx(context, "Internal ASN.1 encoder error");
+		ret = krb5_encrypt_EncryptedData(context, reply_crypto, KRB5_KU_PA_PKINIT_KX,
+					kckdata, kcklen, 0, &kx);
+		krb5_crypto_destroy(context, reply_crypto);
+		free(kckdata);
+		if (ret) {
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		ASN1_MALLOC_ENCODE(EncryptedData, kxdata, kxlen,
+			      &kx, &size, ret);
+		free_EncryptedData(&kx);
+		if (ret) {
+		    krb5_set_error_message(context, ret, "encoding of PKINIT-KX failed %d", ret);
+		    free_PA_PK_AS_REP(&rep);
+		    goto out;
+		}
+		if (kxlen != size)
+		    krb5_abortx(context, "Internal ASN.1 encoder error");
+	 	/* Add PA-PKINIT-KX */
+		ret = krb5_padata_add(context, md, KRB5_PADATA_PKINIT_KX, kxdata, kxlen);
+		if (ret) {
+		    krb5_set_error_message(context, ret,
+			       "Failed adding PKINIT-KX %d", ret);
+		    free(buf);
+		    goto out;
+		}
 	    }
-
-	    /* XXX Add PA-PKINIT-KX */
-
 	}
 
 #define use_btmm_with_enckey 0

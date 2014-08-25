@@ -929,6 +929,8 @@ _kdc_as_rep(krb5_context context,
 #ifdef PKINIT
     pk_client_params *pkp = NULL;
 #endif
+    int i;
+    const PA_DATA *pa;
 
     memset(&rep, 0, sizeof(rep));
     memset(&session_key, 0, sizeof(session_key));
@@ -984,16 +986,25 @@ _kdc_as_rep(krb5_context context,
      */
 
     if (_kdc_is_anonymous(context, client_princ)) {
-	if (!b->kdc_options.request_anonymous) {
+	if (f.constrained_delegation /* bit 14 used to be anon */) {
+	    f.request_anonymous = 1;
+	}
+	if (!f.request_anonymous) {
 	    kdc_log(context, config, 0, "Anonymous ticket w/o anonymous flag");
-	    ret = KRB5KDC_ERR_C_PRINCIPAL_UNKNOWN;
+	    ret = KRB5KDC_ERR_BADOPTION;
 	    goto out;
 	}
-    } else if (b->kdc_options.request_anonymous) {
+	if (!config->allow_anonymous) {
+	   kdc_log(context, config, 0, "Anonymous tickets not allowed");
+	   ret = KRB5KDC_ERR_BADOPTION;
+	   goto out;
+	}
+    } else if (f.request_anonymous || 
+		f.constrained_delegation /* bit 14 used to be anon */) {
 	kdc_log(context, config, 0, 
 		"Request for a anonymous ticket with non "
 		"anonymous client name: %s", client_name);
-	ret = KRB5KDC_ERR_C_PRINCIPAL_UNKNOWN;
+	ret = KRB5KDC_ERR_BADOPTION;
 	goto out;
     }
 
@@ -1085,8 +1096,6 @@ _kdc_as_rep(krb5_context context,
      */
 
     if(req->padata){
-	int i;
-	const PA_DATA *pa;
 	int found_pa = 0;
 
 	log_patypes(context, config, req->padata);
@@ -1159,7 +1168,7 @@ _kdc_as_rep(krb5_context context,
 	
 	    found_pa = 1;
 	
-	    if (b->kdc_options.request_anonymous) {
+	    if (f.request_anonymous) {
 		ret = KRB5KRB_AP_ERR_BAD_INTEGRITY;
 		kdc_log(context, config, 0, "ENC-TS doesn't support anon");
 		goto out;
@@ -1314,7 +1323,7 @@ _kdc_as_rep(krb5_context context,
 	    goto out;
 	}
     }else if (config->require_preauth
-	      || b->kdc_options.request_anonymous /* hack to force anon */
+	      || f.request_anonymous /* hack to force anon */
 	      || client->entry.flags.require_preauth
 	      || server->entry.flags.require_preauth) {
 	METHOD_DATA method_data;
@@ -1326,6 +1335,44 @@ _kdc_as_rep(krb5_context context,
 	method_data.len = 0;
 	method_data.val = NULL;
 
+#ifdef PKINIT
+	if (config->enable_pkinit) {
+	    ret = realloc_method_data(&method_data);
+	    if (ret) {
+		free_METHOD_DATA(&method_data);
+		goto out;
+	    }
+	    pa = &method_data.val[method_data.len-1];
+	    pa->padata_type		= KRB5_PADATA_PK_AS_REQ;
+	    pa->padata_value.length	= 0;
+	    pa->padata_value.data	= NULL;
+
+#if 0 /* old windows not relevant to us */
+	    /*ret = realloc_method_data(&method_data);
+	    if (ret) {
+	        free_METHOD_DATA(&method_data);
+	        goto out;
+	    }
+	    pa = &method_data.val[method_data.len-1];
+	    pa->padata_type		= KRB5_PADATA_PK_AS_REQ_WIN;
+	    pa->padata_value.length	= 0;
+	    pa->padata_value.data	= NULL;*/
+#endif
+
+	    if (f.request_anonymous) {
+		ret = realloc_method_data(&method_data);
+		if (ret) {
+		    free_METHOD_DATA(&method_data);
+		    goto out;
+		}
+		pa = &method_data.val[method_data.len-1];
+		pa->padata_type         = KRB5_PADATA_PKINIT_KX;
+		pa->padata_value.length = 0;
+		pa->padata_value.data   = NULL;
+		goto skip_enc_ts;
+	    }
+	}
+#endif
 	ret = realloc_method_data(&method_data);
 	if (ret) {
 	    free_METHOD_DATA(&method_data);
@@ -1335,28 +1382,6 @@ _kdc_as_rep(krb5_context context,
 	pa->padata_type		= KRB5_PADATA_ENC_TIMESTAMP;
 	pa->padata_value.length	= 0;
 	pa->padata_value.data	= NULL;
-
-#ifdef PKINIT
-	ret = realloc_method_data(&method_data);
-	if (ret) {
-	    free_METHOD_DATA(&method_data);
-	    goto out;
-	}
-	pa = &method_data.val[method_data.len-1];
-	pa->padata_type		= KRB5_PADATA_PK_AS_REQ;
-	pa->padata_value.length	= 0;
-	pa->padata_value.data	= NULL;
-
-	ret = realloc_method_data(&method_data);
-	if (ret) {
-	    free_METHOD_DATA(&method_data);
-	    goto out;
-	}
-	pa = &method_data.val[method_data.len-1];
-	pa->padata_type		= KRB5_PADATA_PK_AS_REQ_WIN;
-	pa->padata_value.length	= 0;
-	pa->padata_value.data	= NULL;
-#endif
 
 	/*
 	 * If there is a client key, send ETYPE_INFO{,2}
@@ -1393,6 +1418,9 @@ _kdc_as_rep(krb5_context context,
 	    }
 	}
 	
+#ifdef PKINIT
+skip_enc_ts:
+#endif
 	ASN1_MALLOC_ENCODE(METHOD_DATA, buf, len, &method_data, &len, ret);
 	free_METHOD_DATA(&method_data);
 
@@ -1446,7 +1474,11 @@ _kdc_as_rep(krb5_context context,
     rep.pvno = 5;
     rep.msg_type = krb_as_rep;
 
-    ret = copy_Realm(&client->entry.principal->realm, &rep.crealm);
+    if (_kdc_is_anonymous(context, client_princ)) {
+	Realm anon_realm="WELLKNOWN:ANONYMOUS";
+	ret = copy_Realm(&anon_realm, &rep.crealm);
+    } else
+	ret = copy_Realm(&client->entry.principal->realm, &rep.crealm);
     if (ret)
 	goto out;
     ret = _krb5_principal2principalname(&rep.cname, client->entry.principal);
@@ -1560,8 +1592,11 @@ _kdc_as_rep(krb5_context context,
 	}
     }
 
-    if (f.request_anonymous)
+    if (f.request_anonymous) {
 	et.flags.anonymous = 1;
+	if (f.constrained_delegation) /* old anon flag */
+	    et.flags.old_anonymous = 1;
+    }
 
     if(b->addresses){
 	ALLOC(et.caddr);
