@@ -8,5 +8,6 @@ gssmask_SOURCES = gssmask.c common.c common.h protocol.h
 
 gssmaestro_SOURCES = gssmaestro.c common.c common.h protocol.h
 
-LDADD = $(top_builddir)/lib/gssapi/libgssapi.la $(LIB_roken)
+LDADD = $(top_builddir)/lib/gssapi/libgssapi.la \
+ $(top_builddir)/lib/krb5/libkrb5.la $(LIB_roken)
 
