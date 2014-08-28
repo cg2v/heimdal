@@ -32,16 +32,13 @@ if test "$no_x" != yes; then
 			done
 		fi
 		LIBS="$ac_save_libs $foo $X_PRE_LIBS -lX11 $X_EXTRA_LIBS"
-		AC_RUN_IFELSE([
+		AC_LANG_PUSH([C])
+		AC_RUN_IFELSE([AC_LANG_PROGRAM([
 		#include <X11/Xlib.h>
 		foo(void)
 		{
 		XOpenDisplay(NULL);
-		}
-		main(int argc, char **argv)
-		{
-		return 0;
-		}
+		}].[])
 		],krb_cv_sys_x_libs_rpath="$rflag"; krb_cv_sys_x_libs="$foo"; break,:,
 		krb_cv_sys_x_libs_rpath="" ; krb_cv_sys_x_libs="" ; break)
 	done
