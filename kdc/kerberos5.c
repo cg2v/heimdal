@@ -943,6 +943,7 @@ add_enc_pa_rep(krb5_context context,
 			  KRB5_PADATA_REQ_ENC_PA_REP, cdata.data, cdata.length);
     if (ret)
 	free(cdata.data);
+    return ret;
 }
 
 /*
